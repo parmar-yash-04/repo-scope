@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Navbar, Footer } from "@/components/navbar";
 import { SearchBar } from "@/components/search-bar";
 import { RepoCard } from "@/components/repo-card";
-import { getTrendingRepos, type TrendingRepo } from "@/lib/api";
+import { useTrendingRepos } from "@/hooks/use-repo";
 import { getRecent, type RecentItem } from "@/lib/recent";
 import { Link } from "@tanstack/react-router";
 
@@ -47,17 +47,11 @@ const FEATURES = [
 function Index() {
   const navigate = useNavigate();
   const [recent, setRecent] = useState<RecentItem[]>([]);
-  const [trending, setTrending] = useState<TrendingRepo[]>([]);
   const [scrolled, setScrolled] = useState(false);
+  const trendingQuery = useTrendingRepos();
 
   useEffect(() => {
     setRecent(getRecent());
-  }, []);
-
-  useEffect(() => {
-    getTrendingRepos()
-      .then((items) => setTrending(items))
-      .catch(() => setTrending([]));
   }, []);
 
   useEffect(() => {
@@ -95,13 +89,6 @@ function Index() {
           <div className="mt-7 max-w-2xl mx-auto">
             <SearchBar autoFocus onSubmit={go} />
           </div>
-          {/* <div className="mt-3 text-xs text-muted-foreground font-mono">
-            Try: <button onClick={() => go("facebook", "react")} className="text-primary hover:underline">facebook/react</button>{" "}
-            ·{" "}
-            <button onClick={() => go("vercel", "next.js")} className="text-primary hover:underline">vercel/next.js</button>{" "}
-            ·{" "}
-            <button onClick={() => go("TanStack", "router")} className="text-primary hover:underline">TanStack/router</button>
-          </div> */}
         </div>
       </section>
 
@@ -163,21 +150,28 @@ function Index() {
             <Star className="h-4 w-4 text-[var(--warning)]" />
             <h2 className="text-sm font-mono uppercase tracking-wider text-muted-foreground">Trending repos</h2>
           </div>
+          {trendingQuery.isRefetching && (
+            <span className="text-xs text-muted-foreground">Updating...</span>
+          )}
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {trending.map((r) => (
-            <RepoCard
-              key={`${r.owner}/${r.name}`}
-              owner={r.owner}
-              name={r.name}
-              description={r.description}
-              stars={r.stars}
-              forks={r.forks}
-              language={r.language}
-              languageColor={r.languageColor}
-            />
-          ))}
-        </div>
+        {trendingQuery.isError ? (
+          <div className="text-sm text-muted-foreground">Failed to load trending repos</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {trendingQuery.data?.map((r) => (
+              <RepoCard
+                key={`${r.owner}/${r.name}`}
+                owner={r.owner}
+                name={r.name}
+                description={r.description}
+                stars={r.stars}
+                forks={r.forks}
+                language={r.language}
+                languageColor={r.languageColor}
+              />
+            ))}
+          </div>
+        )}
         <div className="mt-8 text-center">
           <Link
             to="/compare"

@@ -63,7 +63,12 @@ export function SearchBar({
             setValue(e.target.value);
             setError(null);
           }}
-          onFocus={() => setOpen(true)}
+          onFocus={() => {
+            // Only show recent popup when input is empty
+            if (value.length === 0) {
+              setOpen(true);
+            }
+          }}
           placeholder={compact ? "owner/repo" : "Enter GitHub repo URL or owner/repo"}
           className={cn(
             "flex-1 bg-transparent outline-none placeholder:text-muted-foreground font-mono",
@@ -88,24 +93,7 @@ export function SearchBar({
 
       {error && <p className="mt-2 text-xs text-destructive font-mono">{error}</p>}
 
-      {open && recent.length > 0 && (
-        <div className="absolute z-50 mt-2 w-full rounded-xl border border-border bg-popover shadow-2xl overflow-hidden animate-fade-in">
-          <div className="px-3 py-2 text-[10px] font-mono uppercase tracking-wider text-muted-foreground border-b border-border">
-            Recent
-          </div>
-          {recent.map((r) => (
-            <button
-              key={`${r.owner}/${r.name}`}
-              type="button"
-              onClick={() => submit(`${r.owner}/${r.name}`)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-accent text-left text-sm font-mono"
-            >
-              <History className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-foreground">{r.owner}/<span className="text-primary">{r.name}</span></span>
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Recent popup disabled */}
     </div>
   );
 }

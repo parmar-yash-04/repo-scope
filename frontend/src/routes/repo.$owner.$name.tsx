@@ -1,19 +1,28 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { z } from "zod";
 import { zodValidator, fallback } from "@tanstack/zod-adapter";
 import {
-  LayoutDashboard, Users, GitCommit, CircleDot, Boxes, Activity, Sparkles, ChevronLeft,
+  LayoutDashboard,
+  Users,
+  GitCommit,
+  CircleDot,
+  Boxes,
+  Activity,
+  Sparkles,
+  ChevronLeft,
 } from "lucide-react";
 
 import { Navbar, Footer } from "@/components/navbar";
-import { CardSkel, Skel } from "@/components/skeleton-loader";
+import { RepoOverviewSkeleton, CardSkel, StatsSkeleton } from "@/components/skeleton-loader";
 import { ErrorCard } from "@/components/error-card";
 import {
-  getRepo, getContributors, getCommits, getIssues, getHealthScore, getDependencies,
-  type RepoOverview, type Contributor, type CommitActivity, type IssuesData, type LanguagesData,
-  type HealthScore, type Dependencies,
-} from "@/lib/api";
+  useRepo,
+  useContributors,
+  useCommits,
+  useIssues,
+  useHealthScore,
+  useDependencies,
+} from "@/hooks/use-repo";
 import { pushRecent } from "@/lib/recent";
 import { OverviewTab } from "@/components/tabs/overview-tab";
 import { ContributorsTab } from "@/components/tabs/contributors-tab";
@@ -24,7 +33,15 @@ import { HealthTab } from "@/components/tabs/health-tab";
 import { AiSummaryTab } from "@/components/tabs/ai-summary-tab";
 import { cn } from "@/lib/utils";
 
-const TAB_VALUES = ["overview", "contributors", "commits", "issues", "stack", "health", "ai"] as const;
+const TAB_VALUES = [
+  "overview",
+  "contributors",
+  "commits",
+  "issues",
+  "stack",
+  "health",
+  "ai",
+] as const;
 type TabValue = (typeof TAB_VALUES)[number];
 
 const searchSchema = z.object({
@@ -33,6 +50,9 @@ const searchSchema = z.object({
 
 export const Route = createFileRoute("/repo/$owner/$name")({
   validateSearch: zodValidator(searchSchema),
+  beforeLoad: ({ params }) => {
+    pushRecent(params.owner, params.name);
+  },
   head: ({ params }) => ({
     meta: [
       { title: `${params.owner}/${params.name} — RepoScope` },
@@ -50,7 +70,11 @@ export const Route = createFileRoute("/repo/$owner/$name")({
   component: RepoPage,
 });
 
-const TABS: { value: TabValue; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+const TABS: {
+  value: TabValue;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}[] = [
   { value: "overview", label: "Overview", icon: LayoutDashboard },
   { value: "contributors", label: "Contributors", icon: Users },
   { value: "commits", label: "Commits", icon: GitCommit },
@@ -60,57 +84,29 @@ const TABS: { value: TabValue; label: string; icon: React.ComponentType<{ classN
   { value: "ai", label: "AI Summary", icon: Sparkles },
 ];
 
-interface State {
-  loading: boolean;
-  error: string | null;
-  repo: RepoOverview | null;
-  contributors: Contributor[] | null;
-  commits: CommitActivity | null;
-  issues: IssuesData | null;
-  langs: LanguagesData | null;
-  health: HealthScore | null;
-  deps: Dependencies | null;
-}
-
 function RepoPage() {
   const { owner, name } = Route.useParams();
   const { tab } = Route.useSearch();
-  const navigate = useNavigate();
+  const navigate = Route.useNavigate();
 
-  const [state, setState] = useState<State>({
-    loading: true, error: null,
-    repo: null, contributors: null, commits: null, issues: null, langs: null, health: null, deps: null,
-  });
+  const repo = useRepo(owner, name);
+  const contributors = useContributors(owner, name);
+  const commits = useCommits(owner, name);
+  const issues = useIssues(owner, name);
+  const health = useHealthScore(owner, name);
+  const deps = useDependencies(owner, name);
 
-  useEffect(() => {
-    pushRecent(owner, name);
-  }, [owner, name]);
-
-  async function loadAll() {
-    setState((s) => ({ ...s, loading: true, error: null }));
-    try {
-      const [repo, contributors, commits, issues, health, deps] = await Promise.all([
-        getRepo(owner, name),
-        getContributors(owner, name),
-        getCommits(owner, name),
-        getIssues(owner, name),
-        getHealthScore(owner, name),
-        getDependencies(owner, name),
-      ]);
-      const langs: LanguagesData = { languages: repo.languages ?? [] };
-      setState({ loading: false, error: null, repo, contributors, commits, issues, langs, health, deps });
-    } catch (e) {
-      setState((s) => ({ ...s, loading: false, error: e instanceof Error ? e.message : "Failed to load repo" }));
-    }
-  }
-
-  useEffect(() => {
-    loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [owner, name]);
+  const isLoading = repo.isPending;
+  const hasError = repo.isError;
+  const errorMessage = repo.error?.message || "Failed to load repository";
+  const refetch = repo.refetch;
 
   function setTab(t: TabValue) {
-    navigate({ to: ".", params: { owner, name }, search: { tab: t } });
+    navigate({
+      to: ".",
+      params: { owner, name },
+      search: { tab: t },
+    });
   }
 
   return (
@@ -127,7 +123,6 @@ function RepoPage() {
           </Link>
         </div>
 
-        {/* Tabs */}
         <div className="mx-auto max-w-7xl px-2 sm:px-4 overflow-x-auto">
           <div className="flex gap-1 min-w-max">
             {TABS.map((t) => {
@@ -138,12 +133,16 @@ function RepoPage() {
                   onClick={() => setTab(t.value)}
                   className={cn(
                     "relative flex items-center gap-2 px-3 sm:px-4 py-3 text-sm font-medium transition-colors whitespace-nowrap",
-                    active ? "text-primary" : "text-muted-foreground hover:text-foreground",
+                    active
+                      ? "text-primary"
+                      : "text-muted-foreground hover:text-foreground"
                   )}
                 >
                   <t.icon className="h-4 w-4" />
                   {t.label}
-                  {active && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary" />}
+                  {active && (
+                    <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary" />
+                  )}
                 </button>
               );
             })}
@@ -152,32 +151,32 @@ function RepoPage() {
       </div>
 
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 sm:px-6 py-6">
-        {state.error && (
+        {hasError && (
           <ErrorCard
-            title="Repo not found"
-            message={state.error}
-            onRetry={loadAll}
+            title="Repository not found"
+            message={errorMessage}
+            onRetry={refetch}
           />
         )}
 
-        {state.loading && <DashboardSkeleton />}
+        {isLoading && <RepoLoadingState />}
 
-        {!state.loading && !state.error && state.repo && (
+        {!isLoading && !hasError && repo.data && (
           <>
-            {tab === "overview" && state.langs && (
-              <OverviewTab repo={state.repo} langs={state.langs} />
+            {tab === "overview" && (
+              <OverviewTab repo={repo.data} langs={{ languages: repo.data.languages ?? [] }} />
             )}
-            {tab === "contributors" && state.contributors && (
-              <ContributorsTab contributors={state.contributors} />
+            {tab === "contributors" && contributors.data && (
+              <ContributorsTab contributors={contributors.data} />
             )}
-            {tab === "commits" && state.commits && (
-              <CommitActivityTab data={state.commits} />
+            {tab === "commits" && commits.data && (
+              <CommitActivityTab data={commits.data} />
             )}
-            {tab === "issues" && state.issues && <IssuesTab data={state.issues} />}
-            {tab === "stack" && state.deps && state.langs && (
-              <TechStackTab deps={state.deps} langs={state.langs} />
+            {tab === "issues" && issues.data && <IssuesTab data={issues.data} />}
+            {tab === "stack" && deps.data && (
+              <TechStackTab deps={deps.data} langs={{ languages: repo.data.languages ?? [] }} />
             )}
-            {tab === "health" && state.health && <HealthTab data={state.health} />}
+            {tab === "health" && health.data && <HealthTab data={health.data} />}
             {tab === "ai" && <AiSummaryTab owner={owner} name={name} />}
           </>
         )}
@@ -188,22 +187,18 @@ function RepoPage() {
   );
 }
 
-function DashboardSkeleton() {
+function RepoLoadingState() {
   return (
     <div className="space-y-6">
       <div className="rounded-xl border border-border bg-card p-6 flex items-start gap-4">
-        <Skel className="h-14 w-14 rounded-xl" />
+        <div className="h-14 w-14 rounded-xl bg-muted animate-pulse" />
         <div className="flex-1 space-y-2">
-          <Skel className="h-5 w-1/3" />
-          <Skel className="h-3 w-2/3" />
-          <Skel className="h-3 w-1/2" />
+          <div className="h-5 w-1/3 bg-muted animate-pulse rounded" />
+          <div className="h-3 w-2/3 bg-muted animate-pulse rounded" />
+          <div className="h-3 w-1/2 bg-muted animate-pulse rounded" />
         </div>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <CardSkel key={i} />
-        ))}
-      </div>
+      <StatsSkeleton />
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <CardSkel className="lg:col-span-2 h-64" />
         <CardSkel className="h-64" />
